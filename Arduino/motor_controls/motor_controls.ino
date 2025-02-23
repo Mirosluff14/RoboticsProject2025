@@ -93,7 +93,7 @@ void setup() {
  
     // Start Serial Monitor
   Serial.begin(115200);
-  set_microros_wifi_transports("IOTLABRA", "iotlabra2020", "172.16.200.11", 8888);
+  set_microros_wifi_transports("Wokwi-GUEST", "", "192.168.1.109", 8888); // Change according to the ip address and network credentials
  
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, HIGH);  

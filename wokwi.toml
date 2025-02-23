@@ -1,0 +1,4 @@
+[wokwi]
+version = 1
+firmware = 'Arduino\motor_controls\build\esp32.esp32.esp32\motor_controls.ino.bin'
+elf = 'Arduino\motor_controls\build\esp32.esp32.esp32\motor_controls.ino.elf'

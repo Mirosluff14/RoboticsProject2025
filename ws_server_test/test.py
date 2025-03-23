@@ -4,7 +4,7 @@ import json
 import keyboard
 import time
 
-ROSBRIDGE_WS = "ws://192.168.1.109:9090"  # put your ROS 2 IP address here after ws://, port 9090
+ROSBRIDGE_WS = "ws://127.0.0.1:9090"  # put your ROS 2 IP address here after ws://, port 9090
 
 async def send_ros_message():
     async with websockets.connect(ROSBRIDGE_WS) as websocket:

@@ -1,11 +1,11 @@
+#include <WiFi.h>
+#include <ESPmDNS.h>
 #include <micro_ros_arduino.h>
- 
 #include <stdio.h>
 #include <rcl/rcl.h>
 #include <rcl/error_handling.h>
 #include <rclc/rclc.h>
 #include <rclc/executor.h>
- 
 #include <std_msgs/msg/int32.h>
  
 rcl_subscription_t subscriber;
@@ -15,114 +15,133 @@ rclc_support_t support;
 rcl_allocator_t allocator;
 rcl_node_t node;
 rcl_timer_t timer;
- 
+
 #define LED_PIN 13
+#define TIMEOUT_INTERVAL 500 // 500 milliseconds
  
-#define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
-#define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){}}
- 
-// Define motor driver control pins
 #define IN1 32
 #define IN2 33
 #define IN3 25
 #define IN4 26
+#define ENA 5
+#define ENB 4
  
-// Define motor PWM control pins (if you want to control speed)
-#define ENA 5    // Motor 1 Enable Pin
-#define ENB 4    // Motor 2 Enable Pin
+unsigned long last_received_time = 0;
  
+#define RCCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){error_loop();}}
+#define RCSOFTCHECK(fn) { rcl_ret_t temp_rc = fn; if((temp_rc != RCL_RET_OK)){}}
  
 void error_loop(){
-  while(1){
-    digitalWrite(LED_PIN, !digitalRead(LED_PIN));
-    delay(100);
-  }
+    Serial.println("Error in Micro-ROS, restarting");
+    delay(1000);
+    ESP.restart();
 }
  
 void subscription_callback(const void * msgin)
 {  
   const std_msgs__msg__Int32 * msg = (const std_msgs__msg__Int32 *)msgin;
+  last_received_time = millis();
  
-  // Print the received data to the Serial Monitor
   Serial.print("Received data: ");
   Serial.println(msg->data);
  
-  int32_t command = msg->data;  // Read the incoming int32 command
- 
-  // Debugging output
-  Serial.print("Received command from Micro-ROS: ");
+  int32_t command = msg->data;
+  Serial.print("Received command: ");
   Serial.println(command);
  
-  // Control motors based on received Micro-ROS command
-  if (command == 1) { // Forward
-    moveForward();
-  }
-  else if (command == 2) { // Backward
-    moveBackward();
-  }
-  else if (command == 3) { // Stop
-    stopMotors();
-  }
-  else if (command == 4) { // Left
-    turnLeft();
-  }
-  else if (command == 5) { // Right
-    turnRight();
-  }
+  if (command == 1) { moveForward(); }
+  else if (command == 2) { moveBackward(); }
+  else if (command == 3) { stopMotors(); }
+  else if (command == 4) { turnLeft(); }
+  else if (command == 5) { turnRight(); }
  
-  // Example: Control the LED based on the received data
   digitalWrite(LED_PIN, (msg->data == 0) ? LOW : HIGH);
 }
  
- 
 void setup() {
-  // Set motor control pins as output
-  pinMode(IN1, OUTPUT);
-  pinMode(IN2, OUTPUT);
-  pinMode(IN3, OUTPUT);
-  pinMode(IN4, OUTPUT);
- 
-  // Set motor enable pins as output
-  pinMode(ENA, OUTPUT);
-  pinMode(ENB, OUTPUT);
- 
-  // Set motors to be enabled
-  digitalWrite(ENA, HIGH);
-  digitalWrite(ENB, HIGH);
- 
- 
-    // Start Serial Monitor
   Serial.begin(115200);
-  set_microros_wifi_transports("Wokwi-GUEST", "", "192.168.1.109", 8888); // Change according to the ip address and network credentials
+  WiFi.begin("team1", "team1pass");
+ 
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.println("Connecting...");
+  }
+ 
+  Serial.println("Connected to WiFi");
+ 
+  if (!MDNS.begin("esp32")) {
+    Serial.println("Error setting up MDNS responder!");
+    return;
+  }
+ 
+  Serial.println("mDNS responder started");
+ 
+  // Resolve Micro-ROS Agent's IP dynamically
+  IPAddress agentIP = MDNS.queryHost("team1"); // Resolving team1.local
+ 
+  if (agentIP) {
+    Serial.print("Resolved Micro-ROS Agent IP: ");
+    Serial.println(agentIP);
+ 
+    // Convert IP to a mutable char array
+    char ipStr[16];  // Buffer to store the IP as a string
+    snprintf(ipStr, sizeof(ipStr), "%s", agentIP.toString().c_str());
+ 
+    // Pass the mutable string to set_microros_wifi_transports()
+    set_microros_wifi_transports("team1", "team1pass", ipStr, 8888);
+ 
+  } else {
+    Serial.println("Micro-ROS Agent not found!");
+    return;
+  }
  
   pinMode(LED_PIN, OUTPUT);
-  digitalWrite(LED_PIN, HIGH);  
- 
-  delay(2000);
+  digitalWrite(LED_PIN, HIGH);
  
   allocator = rcl_get_default_allocator();
- 
-  //create init_options
   RCCHECK(rclc_support_init(&support, 0, NULL, &allocator));
- 
-  // create node
   RCCHECK(rclc_node_init_default(&node, "micro_ros_arduino_node", "", &support));
- 
-  // create subscriber
   RCCHECK(rclc_subscription_init_default(
     &subscriber,
     &node,
     ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
     "motor_control"));
  
-  // create executor
   RCCHECK(rclc_executor_init(&executor, &support.context, 1, &allocator));
   RCCHECK(rclc_executor_add_subscription(&executor, &subscriber, &msg, &subscription_callback, ON_NEW_DATA));
 }
  
 void loop() {
   delay(100);
-  RCCHECK(rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100)));
+  rcl_ret_t ret = rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
+  if (ret != RCL_RET_OK) {
+    Serial.println("Error in executor. Reinitializing...");
+    reset_micro_ros();
+  }
+ 
+  if (millis() - last_received_time > TIMEOUT_INTERVAL) {
+    stopMotors();
+  }
+}
+
+void reset_micro_ros() {
+  stopMotors();
+  digitalWrite(LED_PIN, LOW);
+  rclc_executor_fini(&executor);
+ 
+  allocator = rcl_get_default_allocator();
+  rclc_support_init(&support, 0, NULL, &allocator);
+  rclc_node_init_default(&node, "micro_ros_arduino_node", "", &support);
+  rclc_subscription_init_default(
+    &subscriber,
+    &node,
+    ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
+    "motor_control");
+  rclc_executor_init(&executor, &support.context, 1, &allocator);
+  rclc_executor_add_subscription(&executor, &subscriber, &msg, &subscription_callback, ON_NEW_DATA);
+  delay(2000);
+  digitalWrite(LED_PIN, HIGH);
+  Serial.println("Micro-ROS reinitialized successfully.");
 }
  
 void moveForward() {

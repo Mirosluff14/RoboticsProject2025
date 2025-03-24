@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Autonomous Car Control Panel</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="video-stream">
+            <h2>Live Camera Feed</h2>
+            <img src="/video_feed" width="640" height="480">
+        </div>
+
+        <div class="controller-container">
+            <h2>Control Your Car</h2>
+            <div class="controller-grid">
+                <button class="btn forward" onclick="sendCommand('FORWARD')">▲</button>
+                <button class="btn left" onclick="sendCommand('LEFT')">◀</button>
+                <button class="btn right" onclick="sendCommand('RIGHT')">▶</button>
+                <button class="btn backward" onclick="sendCommand('BACKWARD')">▼</button>
+            </div>
+            <p>Use Arrow Keys ↑ ↓ ← → to control or click buttons.</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('keydown', function(event) {
+            let command;
+            let buttonClass;
+            if (event.key === 'ArrowUp') { command = 'FORWARD'; buttonClass = 'forward'; }
+            else if (event.key === 'ArrowLeft') { command = 'LEFT'; buttonClass = 'left'; }
+            else if (event.key === 'ArrowRight') { command = 'RIGHT'; buttonClass = 'right'; }
+            else if (event.key === 'ArrowDown') { command = 'BACKWARD'; buttonClass = 'backward'; }
+        
+            if (command) {
+                sendCommand(command);
+                highlightButton(buttonClass);
+            }
+        });
+        
+        function highlightButton(buttonClass) {
+            const btn = document.querySelector('.' + buttonClass);
+            if (btn) {
+                btn.classList.add('key-active');
+                setTimeout(() => btn.classList.remove('key-active'), 300);
+            }
+        }        
+
+        function sendCommand(command) {
+            fetch('/control', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command })
+            })
+            .then(response => response.json())
+            .then(data => console.log('Command sent:', data))
+            .catch(err => console.error('Error sending command:', err));
+        }
+    </script>
+</body>
+</html>

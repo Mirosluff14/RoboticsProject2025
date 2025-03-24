@@ -59,17 +59,29 @@ thread = threading.Thread(target=capture_and_stream)
 thread.daemon = True
 thread.start()
 
-
 async def send_ros_message_to_rosbridge(message_data):
     async with websockets.connect(ROSBRIDGE_WS) as websocket:
         await websocket.send(json.dumps(message_data))
         response = await websocket.recv()
         print("Received response from ROS bridge:", response)
 
+async def register_topic_if_not_exists(topic):
+    async with websockets.connect(ROSBRIDGE_WS) as websocket:
+        registration_message = {
+            "op": "advertise",
+            "topic": topic,
+            "type": "std_msgs/String"
+        }
+        await websocket.send(json.dumps(registration_message))
+        response = await websocket.recv()
+        print("Topic registration response:", response)
+
 @socketio.on('keyboard_input')
 def handle_keyboard_input(data):
     print(f"Received keyboard input: {data}")
-    message_data = {"op": "publish", "topic": "/motor_control", "msg": {"data": data}}
+    topic = "/motor_control"
+    message_data = {"op": "publish", "topic": topic, "msg": {"data": data}}
+    asyncio.run(register_topic_if_not_exists(topic))
     asyncio.run(send_ros_message_to_rosbridge(message_data))
 
 @app.route('/')

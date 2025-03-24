@@ -59,6 +59,21 @@ void subscription_callback(const void * msgin)
 }
  
 void setup() {
+
+  // Set motor control pins as output
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+ 
+  // Set motor enable pins as output
+  pinMode(ENA, OUTPUT);
+  pinMode(ENB, OUTPUT);
+ 
+  // Set motors to be enabled
+  digitalWrite(ENA, HIGH);
+  digitalWrite(ENB, HIGH);
+
   Serial.begin(115200);
   WiFi.begin("team1", "team1pass");
  

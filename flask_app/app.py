@@ -1,38 +1,63 @@
-from flask import Flask, render_template, Response, request, jsonify
+from flask import Flask, render_template, Response
 from flask_socketio import SocketIO, emit
 import json
 import websockets
 import asyncio
+from picamera2 import Picamera2, Preview
+from libcamera import Transform
+import time
 import cv2
 import threading
+import io
 
-# ROS 2 rosbridge address
-ROSBRIDGE_WS = "ws://127.0.0.1:9090"  
+ROSBRIDGE_WS = "ws://127.0.0.1:9090"  # Your ROS 2 IP address and port
 
 app = Flask(__name__)
 socketio = SocketIO(app)
 
-# Initialize camera (use laptop webcam or external USB camera)
-camera = cv2.VideoCapture(0)
 
-def gen_frames():
+# Initialize the camera
+picam2 = Picamera2()
+
+modes = picam2.sensor_modes
+print(modes)
+
+# Create a configuration for capturing at 640x480 resolution
+camera_config = picam2.create_preview_configuration(main={"size": (1280, 720),
+                                                          "format": "RGB888"}, 
+                                                    transform=Transform(vflip=True))
+
+# Configure the camera
+picam2.configure(camera_config)
+
+
+# Set the frame rate by manually setting the framerate via the `set_controls` method
+#picam2.set_controls({"FrameRate": 30})
+
+# Start the camera
+picam2.start()
+
+# Function to capture frames from the camera and emit them over WebSocket
+def capture_and_stream():
     while True:
-        success, frame = camera.read()
-        if not success:
-            break
-        else:
-            ret, buffer = cv2.imencode('.jpg', frame)
-            frame = buffer.tobytes()
-            yield (b'--frame\r\n'
-                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        # Capture a frame from the camera
+        data = io.BytesIO()
+        picam2.capture_file(data, format='jpeg')
+        data.seek(0)
+        
 
-@app.route('/')
-def index():
-    return render_template('index.html')
+        jpeg_bytes = data.read()
 
-@app.route('/video_feed')
-def video_feed():
-    return Response(gen_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
+        # Emit the JPEG image over WebSocket
+        socketio.emit('video_frame', {'frame': jpeg_bytes})
+
+        # Sleep for a short time to maintain the frame rate
+        time.sleep(1 / 30)  # 30 FPS
+
+# Start the capture and streaming thread
+thread = threading.Thread(target=capture_and_stream)
+thread.daemon = True
+thread.start()
 
 async def send_ros_message_to_rosbridge(message_data):
     async with websockets.connect(ROSBRIDGE_WS) as websocket:
@@ -51,19 +76,19 @@ async def register_topic_if_not_exists(topic):
         response = await websocket.recv()
         print("Topic registration response:", response)
 
-@app.route('/control', methods=['POST'])
-def control():
-    data = request.json
-    command = data.get("command")
+@socketio.on('keyboard_input')
+def handle_keyboard_input(data):
+    print(f"Received keyboard input: {data}")
     topic = "/motor_control"
+    message_data = {"op": "publish", "topic": topic, "msg": {"data": data}}
+    asyncio.run(register_topic_if_not_exists(topic))
+    asyncio.run(send_ros_message_to_rosbridge(message_data))
 
-    if command in ["FORWARD", "BACKWARD", "LEFT", "RIGHT", "STOP"]:
-        message_data = {"op": "publish", "topic": topic, "msg": {"data": command}}
-        asyncio.run(register_topic_if_not_exists(topic))
-        asyncio.run(send_ros_message_to_rosbridge(message_data))
-        return jsonify({"status": "sent", "command": command})
-    else:
-        return jsonify({"status": "error", "message": "Invalid Command"}), 400
+@app.route('/')
+def index():
+    return render_template('index.html')
+
 
 if __name__ == '__main__':
-    socketio.run(app, host='0.0.0.0', port=1000)
+    # Set Flask to listen on all network interfaces (0.0.0.0)
+    socketio.run(app, host='0.0.0.0', port=5000)

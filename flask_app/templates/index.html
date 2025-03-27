@@ -3,61 +3,106 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Autonomous Car Control Panel</title>
+    <title>ROS 2 Control</title>
+    <script src="https://cdn.jsdelivr.net/npm/socket.io-client/dist/socket.io.min.js"></script>
     <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-    <div class="container">
-        <div class="video-stream">
-            <h2>Live Camera Feed</h2>
-            <img src="/video_feed" width="640" height="480">
-        </div>
-
-        <div class="controller-container">
-            <h2>Control Your Car</h2>
-            <div class="controller-grid">
-                <button class="btn forward" onclick="sendCommand('FORWARD')">▲</button>
-                <button class="btn left" onclick="sendCommand('LEFT')">◀</button>
-                <button class="btn right" onclick="sendCommand('RIGHT')">▶</button>
-                <button class="btn backward" onclick="sendCommand('BACKWARD')">▼</button>
-            </div>
-            <p>Use Arrow Keys ↑ ↓ ← → to control or click buttons.</p>
-        </div>
-    </div>
-
     <script>
+        // Establish SocketIO connection
+        const socket = io.connect('http://' + document.domain + ':' + location.port);
+    
+        // Debounce variables
+        let lastPressTime = 0;
+        const debounceInterval = 200; // 200ms debounce interval
+    
+        // Listen for keyboard inputs
         document.addEventListener('keydown', function(event) {
+            let key = event.key;
             let command;
             let buttonClass;
-            if (event.key === 'ArrowUp') { command = 'FORWARD'; buttonClass = 'forward'; }
-            else if (event.key === 'ArrowLeft') { command = 'LEFT'; buttonClass = 'left'; }
-            else if (event.key === 'ArrowRight') { command = 'RIGHT'; buttonClass = 'right'; }
-            else if (event.key === 'ArrowDown') { command = 'BACKWARD'; buttonClass = 'backward'; }
-        
-            if (command) {
-                sendCommand(command);
+    
+            if (key === 'ArrowUp') {
+                command = 1;
+                buttonClass = 'forward';
+            } else if (key === 'ArrowDown') {
+                command = 2;
+                buttonClass = 'backward';
+            } else if (key === 'ArrowLeft') {
+                command = 3;
+                buttonClass = 'left';
+            } else if (key === 'ArrowRight') {
+                command = 4;
+                buttonClass = 'right';
+            } else if (key === ' ') {
+                command = 5;
+                buttonClass = 'stop';
+            }
+
+    
+            const currentTime = Date.now();
+            if (command && (currentTime - lastPressTime > debounceInterval)) {
+                lastPressTime = currentTime;
+                // Emit the command via SocketIO
+                socket.emit('keyboard_input', command);
+                console.log('Sent command:', command);
+
+                // highlight button animation
                 highlightButton(buttonClass);
+            } else {
+                console.log('Command skipped due to debounce.');
             }
         });
-        
+
+    
+        // Optional: Animate button press visually
         function highlightButton(buttonClass) {
             const btn = document.querySelector('.' + buttonClass);
             if (btn) {
                 btn.classList.add('key-active');
                 setTimeout(() => btn.classList.remove('key-active'), 300);
             }
-        }        
-
-        function sendCommand(command) {
-            fetch('/control', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ command })
-            })
-            .then(response => response.json())
-            .then(data => console.log('Command sent:', data))
-            .catch(err => console.error('Error sending command:', err));
         }
-    </script>
+    
+        // For image stream (if implemented using Socket.IO)
+        function updateFrame(frameData) {
+            const img = document.getElementById("video_feed");
+            const arrayBufferView = new Uint8Array(frameData.frame);
+            const blob = new Blob([arrayBufferView], { type: "image/jpeg" });
+            const urlCreator = window.URL || window.webkitURL;
+            const imageUrl = urlCreator.createObjectURL(blob);
+            img.src = imageUrl;
+        }
+    
+        socket.on('video_frame', updateFrame);
+    </script>    
+</head>
+<body>
+ <div class="container">
+        <div class="video-stream">
+            <h2>Live Camera Feed</h2>
+            <img id="video_feed"/>
+        </div>
+
+        <div class="controller-container">
+            <h2>Control Your Car</h2>
+            <div class="controller-grid container">
+                <div class="div1">
+                    <button class="btn forward" onclick="sendCommand('1')">▲</button>
+                </div>
+                <div class="div2">
+                    <button class="btn left" onclick="sendCommand('3')">◀</button>
+                </div>
+                <div class="div3">
+                    <button class="btn stop" onclick="sendCommand('5')">◉</button>
+                </div>
+                <div class="div4">
+                    <button class="btn right" onclick="sendCommand('4')">▶</button>
+                </div>
+                <div class="div5">
+                    <button class="btn backward" onclick="sendCommand('2')">▼</button>
+                </div>
+            </div>
+            
+            <p>Use Arrow Keys ↑ ↓ ← → to control or click buttons.</p>
+        </div>
 </body>
 </html>

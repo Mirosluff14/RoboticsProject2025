@@ -1,0 +1,8 @@
+[wokwi]
+version = 1
+firmware = 'build\esp32.esp32.esp32\motor_controls.ino.bin'
+elf = 'build\esp32.esp32.esp32\motor_controls.ino.elf'
+
+[[chip]]
+name = 'chip-L298N'  # To use the chip in diagram.json, add a part with "chip-inverter" type.
+binary = ''

@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "author": "Carlos Vicente Ariño Latorre",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": -115.2, "left": -33.56, "attrs": {} },
+    { "type": "chip-L298N", "id": "L298N_chip1", "top": 269.82, "left": 14.4, "attrs": {} },
+    {
+      "type": "wokwi-stepper-motor",
+      "id": "stepper1",
+      "top": -15.59,
+      "left": 221.23,
+      "attrs": { "size": "17" }
+    }
+  ],
+  "connections": [
+    [ "esp:32", "L298N_chip1:IN1", "green", [ "h-38.25", "v201.6" ] ],
+    [ "esp:33", "L298N_chip1:IN2", "green", [ "h-47.85", "v201.6" ] ],
+    [ "esp:25", "L298N_chip1:IN3", "green", [ "v0", "h-57.45", "v201.6" ] ],
+    [ "esp:26", "L298N_chip1:IN4", "green", [ "h-67.05", "v201.6" ] ],
+    [ "esp:5", "L298N_chip1:EN A", "purple", [ "h19.2", "v144", "h-124.8" ] ],
+    [ "esp:4", "L298N_chip1:EN B", "purple", [ "h9.6", "v96", "h-134.4", "v86.4" ] ],
+    [ "stepper1:A-", "L298N_chip1:OUT1", "gold", [ "v0" ] ],
+    [ "stepper1:A+", "L298N_chip1:OUT2", "blue", [ "v0" ] ],
+    [ "stepper1:B+", "L298N_chip1:OUT3", "gold", [ "v0" ] ],
+    [ "stepper1:B-", "L298N_chip1:OUT4", "blue", [ "v0" ] ],
+    [ "L298N_chip1:5V", "esp:5V", "red", [ "h0" ] ],
+    [ "L298N_chip1:GND", "esp:GND.1", "black", [ "h-132.59", "v-153.6" ] ],
+[ "esp:TX", "$serialMonitor:RX", "", [] ], [ "esp:RX", "$serialMonitor:TX", "", [] ]
+  ],
+  "dependencies": {}
+}

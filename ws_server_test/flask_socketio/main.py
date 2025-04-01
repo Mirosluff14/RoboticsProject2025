@@ -81,7 +81,7 @@ def handle_keyboard_input(data):
     print(f"Received keyboard input: {data}")
     topic = "/motor_control"
     message_data = {"op": "publish", "topic": topic, "msg": {"data": data}}
-    asyncio.run(register_topic_if_not_exists(topic))
+    #asyncio.run(register_topic_if_not_exists(topic))
     asyncio.run(send_ros_message_to_rosbridge(message_data))
 
 @app.route('/')

@@ -12,12 +12,28 @@ import cv2
 import threading
 import io
 import queue
+import os
+from ultralytics import YOLO
 
+
+######## Define the app and global parameters ########
 ROSBRIDGE_WS = "ws://127.0.0.1:9090"  # Your ROS 2 IP address and port
-
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
+# Streaming global flag
+stream_video = False
+# Dataset recording global flag
+record_dataset = False
+dataset_folder = "dataset"
+# Check if dataset folder exists
+if not os.path.exists(dataset_folder):
+    os.makedirs(dataset_folder)
+else:
+    num_stored = len(os.listdir(dataset_folder))
+    sample_index = num_stored - 1 if num_stored > 0 else 0
+
+######## Camera functions ##########
 
 # Initialize the camera
 picam2 = Picamera2()
@@ -25,10 +41,12 @@ picam2 = Picamera2()
 modes = picam2.sensor_modes
 print(modes)
 
-# Create a configuration for capturing at 640x480 resolution
-camera_config = picam2.create_preview_configuration(main={"size": (1280, 720),
-                                                          "format": "RGB888"}, 
+# Create a configuration for capturing at 640x480 resolution with short exposure mode
+camera_config = picam2.create_video_configuration(main={"size": (1640, 1232),
+                                                          "format": "RGB888"},
                                                     transform=Transform(vflip=True))
+# Set short exposure mode
+camera_config["controls"] = {"ExposureTime": 2000}  # Set exposure time in microseconds
 # Configure the camera
 picam2.configure(camera_config)
 
@@ -37,22 +55,40 @@ picam2.configure(camera_config)
 # Start the camera
 picam2.start()
 
+# Function to capture and save to dataset folder
+def capture_and_save(action):
+    global sample_index
+    start_time = time.time()
+    filepath = f"{dataset_folder}/{sample_index}_{action}.jpg" # FORMAT: index_action.jpg
+    picam2.capture_file(filepath)
+    end_time = time.time()
+    print(f"Time taken: {end_time-start_time}")
+    sample_index += 1
+
+
 # Function to capture frames from the camera and emit them over WebSocket
 def capture_and_stream():
+    global stream_video
     while True:
-        # Capture a frame from the camera
-        data = io.BytesIO()
-        picam2.capture_file(data, format='jpeg')
-        data.seek(0)
-        
+        if stream_video:
+            # Capture a frame from the camera
+            data = io.BytesIO()
+            picam2.capture_file(data, format='jpeg')
+            data.seek(0)
+            
+            jpeg_bytes = data.read()
 
-        jpeg_bytes = data.read()
+            # Emit the JPEG image over WebSocket
+            socketio.emit('video_frame', {'frame': jpeg_bytes})
 
-        # Emit the JPEG image over WebSocket
-        socketio.emit('video_frame', {'frame': jpeg_bytes})
+            # Sleep for a short time to maintain the frame rate
+            socketio.sleep(1 / 30)  # 30 FPS
 
-        # Sleep for a short time to maintain the frame rate
-        time.sleep(1 / 30)  # 30 FPS
+
+
+        else:
+            # Sleep, no capturing required
+            socketio.sleep(1)  # 30 FPS
 
 # Start the capture and streaming thread
 thread = threading.Thread(target=capture_and_stream)
@@ -85,7 +121,7 @@ class WebSocketClient:
     def on_message(self, ws, message):
         """Handle incoming messages from WebSocket server."""
         print(f"Received message from WebSocket server: {message}")
-        socketio.emit('new_message', {'data': message})  # Forward to frontend
+        #socketio.emit('new_message', {'data': message})  # Forward to frontend
 
     def on_error(self, ws, error):
         print(f"WebSocket error: {error}")
@@ -111,14 +147,29 @@ def websocket_thread():
 ws_thread = threading.Thread(target=websocket_thread, daemon=True)
 ws_thread.start()
 
+# Record switch handling
+@socketio.on('turn_dataset_recording')
+def handle_record_switch(data):
+    global record_dataset
+    record_dataset = data
+    print(f"Dataset recording: {record_dataset}")
+
+# Video stream handling
+@socketio.on('toggle_video_stream')
+def handle_stream_switch(data):
+    global stream_video
+    stream_video = data
 
 # Message handling for ROS bridge
-@socketio.on('keyboard_input')
-def handle_keyboard_input(data):
-    print(f"Received keyboard input: {data}")
+@socketio.on('manual_control_command')
+def handle_manual_input(data):
+    print(f"Received manual command: {data}")
     topic = "/motor_control"
     message_data = {"op": "publish", "topic": topic, "msg": {"data": data}}
     ws_client.send_message(json.dumps(message_data))
+    if record_dataset:
+        capture_and_save(data)
+
 
 @app.route('/')
 def index():

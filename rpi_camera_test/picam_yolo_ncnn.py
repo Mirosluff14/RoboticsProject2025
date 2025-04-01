@@ -25,7 +25,7 @@ while True:
     frame = picam2.capture_array()
 
     # Run YOLO11 inference on the frame
-    results = ncnn_model(frame, workers=16)
+    results = ncnn_model(frame, workers=32)
 
     # Visualize the results on the frame
     annotated_frame = results[0].plot()

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ROS 2 Control</title>
+    <script src="https://cdn.jsdelivr.net/npm/socket.io-client/dist/socket.io.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css">
+    <script>
+        // Establish SocketIO connection
+        const socket = io.connect('http://' + document.domain + ':' + location.port);
+    
+        // Debounce variables
+        let lastPressTime = 0;
+        const debounceInterval = 200; // 200ms debounce interval
+
+        // Listen for keyboard inputs
+        document.addEventListener('keydown', function(event) {
+
+            let key = event.key;
+            let command;
+            let buttonClass;
+    
+            if (key === 'ArrowUp') {
+                event.preventDefault()
+                command = 1;
+                buttonClass = 'forward';
+            } else if (key === 'ArrowDown') {
+                event.preventDefault()
+                command = 2;
+                buttonClass = 'backward';
+            } else if (key === 'ArrowLeft') {
+                event.preventDefault()
+                command = 4;
+                buttonClass = 'left';
+            } else if (key === 'ArrowRight') {
+                event.preventDefault()
+                command = 5;
+                buttonClass = 'right';
+            } else if (key === ' ') {
+                event.preventDefault()
+                command = 3;
+                buttonClass = 'stop';
+            }
+            highlightButton(buttonClass);
+            handleCommand(command);
+
+        });
+
+
+        function handleCommand(command) {
+            const currentTime = Date.now();
+            if (command && (currentTime - lastPressTime > debounceInterval)) {
+                lastPressTime = currentTime;
+                // Emit the command via SocketIO
+                socket.emit('manual_control_command', command);
+                console.log('Sent command:', command);
+
+            } else {
+                console.log('Command skipped due to debounce.');
+            }
+        }
+    
+        // Optional: Animate button press visually
+        function highlightButton(buttonClass) {
+            const btn = document.querySelector('.' + buttonClass);
+            if (btn) {
+                btn.classList.add('key-active');
+                setTimeout(() => btn.classList.remove('key-active'), 200);
+            }
+        }
+
+        let commandInterval;
+        // Add button handlers (loops)
+        function startCommand(command) {
+            stopCommand(); // Prevent multiple intervals from stacking
+            commandInterval = setInterval(() => {
+                handleCommand(command);
+            }, 100); // Send command every 100ms (adjust as needed)
+        }
+
+        function stopCommand() {
+            clearInterval(commandInterval); // Stop command loop
+        }
+    
+        // For image stream (if implemented using Socket.IO)
+        function updateFrame(frameData) {
+            const img = document.getElementById("video_feed");
+            const arrayBufferView = new Uint8Array(frameData.frame);
+            const blob = new Blob([arrayBufferView], { type: "image/jpeg" });
+            const urlCreator = window.URL || window.webkitURL;
+            const imageUrl = urlCreator.createObjectURL(blob);
+            img.src = imageUrl;
+        }
+
+        // Function to turn dataset recording on/off
+        function toggleDatasetRecording(state) {
+            if (state) {
+            // Ensure video stream is turned off
+            document.getElementById("videoStreamToggle").checked = false;
+            toggleVideoStream(false);
+            }
+            // Emit the dataset recording state via SocketIO
+            socket.emit('turn_dataset_recording', state);
+            console.log(`Dataset recording: ${state}`);
+        }
+
+        // Function to toggle video stream
+        function toggleVideoStream(state) {
+            if (state) {
+            // Ensure dataset recording is turned off
+            document.getElementById("datasetToggle").checked = false;
+            toggleDatasetRecording(false);
+            }
+            // Emit the video stream toggle state via SocketIO
+            socket.emit('toggle_video_stream', state);
+            console.log(`Video stream: ${state ? 'ON' : 'OFF'}`);
+        }
+    
+        socket.on('video_frame', updateFrame);
+
+        // Speed control
+        function updateSpeed(value) {
+                    document.getElementById("speedValue").textContent = value;
+                    // Emit the speed value via SocketIO
+                    socket.emit('manual_speed_command', value);
+                    console.log(`Speed set to: ${value}`);
+                }
+
+        // Turn off video stream and dataset recording on page load and set speed to max
+        window.addEventListener('load', () => {
+            toggleVideoStream(false);
+            toggleDatasetRecording(false);
+            document.getElementById("datasetToggle").checked = false;
+            updateSpeed(200);
+        });
+
+        // Turn off video stream and dataset recording on page unload
+        window.addEventListener('beforeunload', () => {
+            toggleVideoStream(false);
+            toggleDatasetRecording(false);
+            document.getElementById("videoStreamToggle").checked = false;
+        });
+
+
+    </script>    
+</head>
+<body>
+ <div class="container">
+        <div class="video-stream">
+            <h2>Live Camera Feed</h2>
+            <img id="video_feed"/>
+        </div>
+
+        <div class="controller-container">
+            <h2>Control Your Car</h2>
+            <div class="controller-grid container">
+                <div class="div1">
+                    <button class="btn forward" 
+                        onmousedown="startCommand(1)" 
+                        onmouseup="stopCommand()" 
+                        onmouseleave="stopCommand()">▲</button>
+                </div>
+                <div class="div2">
+                    <button class="btn left" 
+                        onmousedown="startCommand(3)" 
+                        onmouseup="stopCommand()" 
+                        onmouseleave="stopCommand()">◀</button>
+                </div>
+                <div class="div3">
+                    <button class="btn stop" 
+                        onmousedown="startCommand(5)" 
+                        onmouseup="stopCommand()" 
+                        onmouseleave="stopCommand()">◉</button>
+                </div>
+                <div class="div4">
+                    <button class="btn right" 
+                        onmousedown="startCommand(4)" 
+                        onmouseup="stopCommand()" 
+                        onmouseleave="stopCommand()">▶</button>
+                </div>
+                <div class="div5">
+                    <button class="btn backward" 
+                        onmousedown="startCommand(2)" 
+                        onmouseup="stopCommand()" 
+                        onmouseleave="stopCommand()">▼</button>
+                </div>
+            </div>
+            <div class="dataset-recording">
+                <h3>Dataset Recording</h3>
+                <label class="switch">
+                    <input type="checkbox" id="datasetToggle" checked onchange="toggleDatasetRecording(this.checked)">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <div class="video-stream-toggle">
+                <h3>Video Stream</h3>
+                <label class="switch">
+                    <input type="checkbox" id="videoStreamToggle" checked onchange="toggleVideoStream(this.checked)">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+            <div class="speed-control">
+                <h3>Speed Control</h3>
+                <input type="range" id="speedSlider" min="150" max="250" value="255" oninput="updateSpeed(this.value)">
+                <span id="speedValue">200</span>
+            </div>
+
+            
+            <p>Use Arrow Keys ↑ ↓ ← → to control or click buttons.</p>
+        </div>
+</body>
+</html>

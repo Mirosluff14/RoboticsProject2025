@@ -18,7 +18,7 @@ rcl_node_t node;
 rcl_timer_t timer;
 
 #define LED_PIN 13
-#define TIMEOUT_INTERVAL 500 // 500 milliseconds
+#define TIMEOUT_INTERVAL 200 // 500 milliseconds
  
 #define IN1 32
 #define IN2 33
@@ -30,11 +30,11 @@ rcl_timer_t timer;
 // Pwm settings
 #define PWM_CHANNEL_A 0
 #define PWM_CHANNEL_B 1
-#define PWM_FREQ 5000
+#define PWM_FREQ 30000
 #define PWM_RESOLUTION 8
 
 #define MAX_SPEED 255
-#define MIN_SPEED 0
+#define MIN_SPEED 6
 
 int motor_speed = MAX_SPEED;  // Default to max speed
  
@@ -48,7 +48,17 @@ void error_loop(){
     delay(1000);
     ESP.restart();
 }
- 
+
+void setMotorSpeed(int speed = -1) {
+    if (speed == -1) speed = motor_speed;  // Use default speed if not specified
+    ledcWrite(ENA, speed);
+    ledcWrite(ENB, speed);
+
+    //dutyB = ledcRead(ENB);
+    Serial.print("Motor speed set to: ");
+    Serial.println(ledcRead(ENA));
+}
+
 void subscription_callback(const void * msgin)
 {  
   const std_msgs__msg__Int32 * msg = (const std_msgs__msg__Int32 *)msgin;
@@ -66,15 +76,12 @@ void subscription_callback(const void * msgin)
   else if (command == 3) { stopMotors(); }
   else if (command == 4) { turnLeft(); }
   else if (command == 5) { turnRight(); }
+  else if (command > 5 & command <= 255) { setMotorSpeed(command); }
  
   digitalWrite(LED_PIN, (msg->data == 0) ? LOW : HIGH);
 }
  
 void setup() {
-
-  // Configure PWM channels
-  ledcAttach(ENA, PWM_FREQ, PWM_RESOLUTION);
-  ledcAttach(ENB, PWM_FREQ, PWM_RESOLUTION);
 
   // Set motor control pins as output
   pinMode(IN1, OUTPUT);
@@ -86,6 +93,10 @@ void setup() {
   pinMode(ENA, OUTPUT);
   pinMode(ENB, OUTPUT);
  
+  // Configure PWM channels
+  ledcAttachChannel(ENA, PWM_FREQ, PWM_RESOLUTION, PWM_CHANNEL_A);
+  ledcAttachChannel(ENB, PWM_FREQ, PWM_RESOLUTION, PWM_CHANNEL_B);
+
   // Set motors to be enabled
   digitalWrite(ENA, HIGH);
   digitalWrite(ENB, HIGH);
@@ -175,14 +186,7 @@ void reset_micro_ros() {
   Serial.println("Micro-ROS reinitialized successfully.");
 }
 
-void setMotorSpeed(int speed = -1) {
-    if (speed == -1) speed = motor_speed;  // Use default speed if not specified
-    ledcWrite(ENA, speed);
-    ledcWrite(ENB, speed);
-}
-
 void moveForward() {
-  setMotorSpeed();
   digitalWrite(IN1, HIGH);
   digitalWrite(IN2, LOW);
   digitalWrite(IN3, LOW);
@@ -191,7 +195,6 @@ void moveForward() {
 }
  
 void moveBackward() {
-  setMotorSpeed();
   digitalWrite(IN1, LOW);
   digitalWrite(IN2, HIGH);
   digitalWrite(IN3, HIGH);
@@ -200,7 +203,6 @@ void moveBackward() {
 }
  
 void stopMotors() {
-  setMotorSpeed(0);
   digitalWrite(IN1, LOW);
   digitalWrite(IN2, LOW);
   digitalWrite(IN3, LOW);
@@ -209,7 +211,6 @@ void stopMotors() {
 }
  
 void turnLeft() {
-  setMotorSpeed();
   digitalWrite(IN1, LOW);
   digitalWrite(IN2, HIGH);
   digitalWrite(IN3, LOW);
@@ -218,7 +219,6 @@ void turnLeft() {
 }
  
 void turnRight() {
-  setMotorSpeed();
   digitalWrite(IN1, HIGH);
   digitalWrite(IN2, LOW);
   digitalWrite(IN3, HIGH);

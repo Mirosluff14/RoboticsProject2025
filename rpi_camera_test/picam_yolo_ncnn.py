@@ -1,7 +1,15 @@
 from picamera2 import Picamera2, Preview
 from libcamera import Transform
 from ultralytics import YOLO
+import cv2
+import time
+import os
 
+# Set the current working directory to the file's location
+current_dir = os.path.dirname(os.path.abspath(__file__))
+print(current_dir)
+
+save_location = current_dir + "images"
 
 # Initialize the camera
 picam2 = Picamera2()
@@ -9,23 +17,33 @@ picam2 = Picamera2()
 modes = picam2.sensor_modes
 print(modes)
 
-picam2.preview_configuration.main.size = (1280, 720)
-picam2.preview_configuration.main.format = "RGB888"
-picam2.preview_configuration.align()
-picam2.configure("preview")
+# Create a configuration for capturing at 640x480 resolution with short exposure mode
+camera_config = picam2.create_video_configuration(main={"size": (1640, 922),
+                                                          "format": "RGB888"},
+                                                    transform=Transform(vflip=True))
+# Set short exposure mode
+#camera_config["controls"] = {"ExposureTime": 5000}  # Set exposure time in microseconds
+# Configure the camera
+picam2.configure(camera_config)
 picam2.start()
 
 # Load the exported NCNN model
-ncnn_model = YOLO("yolo11n_ncnn_model")
+ncnn_model = YOLO("yolo11n_ncnn_model", task="detect")
 
 # Function to capture frames from the camera and emit them over WebSocket
 
-while True:
+for i in range(5):
     # Capture frame-by-frame
     frame = picam2.capture_array()
 
     # Run YOLO11 inference on the frame
-    results = ncnn_model(frame, workers=16)
+    results = ncnn_model(frame, workers=4)
 
     # Visualize the results on the frame
     annotated_frame = results[0].plot()
+    
+    # Save the annotated frame as a JPEG image
+    timestamp = int(time.time())
+    filename = f"frame_{timestamp}.jpg"
+    cv2.imwrite(filename, annotated_frame)
+    time.sleep(1)

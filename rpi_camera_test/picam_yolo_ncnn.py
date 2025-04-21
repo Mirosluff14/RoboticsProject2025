@@ -28,7 +28,7 @@ picam2.configure(camera_config)
 picam2.start()
 
 # Load the exported NCNN model
-ncnn_model = YOLO("yolo11n_ncnn_model", task="detect")
+ncnn_model = YOLO("best.torchscript", task=None)
 
 # Function to capture frames from the camera and emit them over WebSocket
 

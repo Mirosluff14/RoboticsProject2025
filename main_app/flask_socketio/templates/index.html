@@ -91,6 +91,7 @@
             const urlCreator = window.URL || window.webkitURL;
             const imageUrl = urlCreator.createObjectURL(blob);
             img.src = imageUrl;
+            console.log("Frame updated");
         }
 
         // Function to turn dataset recording on/off
@@ -107,14 +108,23 @@
 
         // Function to toggle video stream
         function toggleVideoStream(state) {
-            if (state) {
+            
+            //if (state) {
             // Ensure dataset recording is turned off
-            document.getElementById("datasetToggle").checked = false;
-            toggleDatasetRecording(false);
-            }
+            //document.getElementById("datasetToggle").checked = false;
+            //toggleDatasetRecording(false);
+            //}
+
             // Emit the video stream toggle state via SocketIO
             socket.emit('toggle_video_stream', state);
             console.log(`Video stream: ${state ? 'ON' : 'OFF'}`);
+        }
+
+        // Function to send auto command
+        function sendAutoCommand() {
+            // Emit the video stream toggle state via SocketIO
+            socket.emit('auto_control_command', "Hello world");
+
         }
     
         socket.on('video_frame', updateFrame);
@@ -127,6 +137,7 @@
                     console.log(`Speed set to: ${value}`);
                 }
 
+        /*
         // Turn off video stream and dataset recording on page load and set speed to max
         window.addEventListener('load', () => {
             toggleVideoStream(false);
@@ -141,6 +152,7 @@
             toggleDatasetRecording(false);
             document.getElementById("videoStreamToggle").checked = false;
         });
+        */
 
 
     </script>    
@@ -204,6 +216,10 @@
                 <h3>Speed Control</h3>
                 <input type="range" id="speedSlider" min="150" max="250" value="255" oninput="updateSpeed(this.value)">
                 <span id="speedValue">200</span>
+            </div>
+
+            <div class="auto-control-button">
+                <button onclick="sendAutoCommand()">Auto control</button>
             </div>
 
             

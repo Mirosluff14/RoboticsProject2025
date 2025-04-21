@@ -4,16 +4,17 @@ from flask import Flask, render_template, Response
 from flask_socketio import SocketIO, emit
 import json
 import websocket
-import asyncio
 from picamera2 import Picamera2, Preview
 from libcamera import Transform
 import time
 import cv2
 import threading
-import io
 import queue
 import os
-from ultralytics import YOLO
+
+from engineio.payload import Payload
+
+Payload.max_decode_packets = 50
 
 
 ######## Define the app and global parameters ########
@@ -22,7 +23,7 @@ app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Streaming global flag
-stream_video = False
+stream_video = True
 # Dataset recording global flag
 record_dataset = False
 dataset_folder = "dataset"
@@ -32,6 +33,7 @@ if not os.path.exists(dataset_folder):
 else:
     num_stored = len(os.listdir(dataset_folder))
     sample_index = num_stored - 1 if num_stored > 0 else 0
+
 
 ######## Camera functions ##########
 
@@ -44,58 +46,44 @@ print(modes)
 # Create a configuration for capturing at 1640, 922 resolution with short exposure mode
 # This resolution allows full FOV
 camera_config = picam2.create_video_configuration(main={"size": (1640, 922),
-                                                          "format": "RGB888"},
-                                                    transform=Transform(vflip=True))
+                                                          "format": "RGB888",
+                                                          },
+                                                          buffer_count=1,
+                                                    transform=Transform(vflip=True,                   
+                                                    hflip=True
+                                                    )
+                                                    )
 # Set short exposure mode
-camera_config["controls"] = {"ExposureTime": 5000}  # Set exposure time in microseconds
+#camera_config["controls"] = {"ExposureTime": 3000}  # Set exposure time in microseconds
 # Configure the camera
 picam2.configure(camera_config)
 
 # Set the frame rate by manually setting the framerate via the `set_controls` method
-#picam2.set_controls({"FrameRate": 30})
+picam2.set_controls({"FrameRate": 30})
 # Start the camera
 picam2.start()
 
-# Function to capture and save to dataset folder
-def capture_and_save(action):
-    global sample_index
-    start_time = time.time()
-    filepath = f"{dataset_folder}/{sample_index}_{action}.jpg" # FORMAT: index_action.jpg
-    picam2.capture_file(filepath)
-    end_time = time.time()
-    print(f"Time taken: {end_time-start_time}")
-    sample_index += 1
 
+FPS = 30  # Frames per second
 
 # Function to capture frames from the camera and emit them over WebSocket
-def capture_and_stream():
-    global stream_video
-    while True:
-        if stream_video:
-            # Capture a frame from the camera
-            data = io.BytesIO()
-            picam2.capture_file(data, format='jpeg')
-            data.seek(0)
-            
-            jpeg_bytes = data.read()
+@app.route('/video_feed')
+def video_feed():
+    def generate_frames():
+        while True:
+            frame = picam2.capture_array()
+            resized_frame = cv2.resize(frame, (640, 360), interpolation=cv2.INTER_LINEAR)
+            _, buffer = cv2.imencode('.jpg', resized_frame)
+            frame_bytes = buffer.tobytes()
 
-            # Emit the JPEG image over WebSocket
-            socketio.emit('video_frame', {'frame': jpeg_bytes})
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                
+            time.sleep(1/30)
 
-            # Sleep for a short time to maintain the frame rate
-            socketio.sleep(1 / 30)  # 30 FPS
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')
 
-
-
-        else:
-            # Sleep, no capturing required
-            socketio.sleep(1)  # 30 FPS
-
-# Start the capture and streaming thread
-thread = threading.Thread(target=capture_and_stream)
-thread.daemon = True
-thread.start()
-
+    
 # Websocket client code:
 # Queue for sending messages to WebSocket server
 message_queue = queue.Queue()
@@ -105,6 +93,7 @@ class WebSocketClient:
         self.url = url
         self.ws = None
         self.running = True
+        self.lock = threading.Lock()
 
     def connect(self):
         """Connect to WebSocket server and listen for messages."""
@@ -117,12 +106,12 @@ class WebSocketClient:
                 self.ws.run_forever()
             except Exception as e:
                 print(f"WebSocket connection error: {e}")
-            time.sleep(2)  # Retry connection after a delay
+            time.sleep(0.5)  # Retry connection after a delay
+            print("Attempting to reconnect to WebSocket...")
 
     def on_message(self, ws, message):
         """Handle incoming messages from WebSocket server."""
         print(f"Received message from WebSocket server: {message}")
-        #socketio.emit('new_message', {'data': message})  # Forward to frontend
 
     def on_error(self, ws, error):
         print(f"WebSocket error: {error}")
@@ -132,10 +121,11 @@ class WebSocketClient:
 
     def send_message(self, message):
         """Send message through the persistent WebSocket connection."""
-        if self.ws and self.ws.sock and self.ws.sock.connected:
-            self.ws.send(message)
-        else:
-            print("WebSocket not connected, message not sent")
+        with self.lock:
+            if self.ws and self.ws.sock and self.ws.sock.connected:
+                self.ws.send(message)
+            else:
+                print("WebSocket not connected, message not sent")
 
 # Create WebSocket client instance for ROS bridge
 ws_client = WebSocketClient(ROSBRIDGE_WS)
@@ -161,6 +151,8 @@ def handle_stream_switch(data):
     global stream_video
     stream_video = data
 
+last_command_recieved_time = None
+
 # Message handling for ROS bridge
 @socketio.on('manual_control_command')
 def handle_manual_input(data):
@@ -169,8 +161,6 @@ def handle_manual_input(data):
     message_data = {"op": "publish", "topic": topic, "msg": {"data": int(data)}}
     ws_client.send_message(json.dumps(message_data))
     #print(f"Data type: {type(data)}")
-    if record_dataset:
-        capture_and_save(data)
 
 @socketio.on('manual_speed_command')
 def handle_speed_input(data):
@@ -181,11 +171,9 @@ def handle_speed_input(data):
     ws_client.send_message(json.dumps(message_data))
 
 
-@app.route('/')
-def index():
-    return render_template('index.html')
-
 
 if __name__ == '__main__':
     # Set Flask to listen on all network interfaces (0.0.0.0)
-    socketio.run(app, host='0.0.0.0', port=5000, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False,
+                 allow_unsafe_werkzeug=True
+                 )
